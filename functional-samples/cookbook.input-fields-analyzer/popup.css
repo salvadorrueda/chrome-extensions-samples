@@ -1,0 +1,104 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 14px;
+  margin: 0;
+  min-width: 260px;
+  color: #202124;
+  background: #fff;
+}
+
+header {
+  background: #1a73e8;
+  padding: 12px 16px;
+}
+
+h1 {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  margin: 0;
+}
+
+main {
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#status {
+  margin: 0;
+  color: #5f6368;
+  font-size: 13px;
+}
+
+#counts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.count-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.label {
+  flex: 1;
+  color: #3c4043;
+}
+
+.num {
+  font-weight: 600;
+  color: #202124;
+  min-width: 20px;
+  text-align: right;
+}
+
+#toggle-btn {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  background: #1a73e8;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  align-self: stretch;
+}
+
+#toggle-btn:hover {
+  background: #1765cc;
+}
+
+#toggle-btn.active {
+  background: #ea4335;
+}
+
+#toggle-btn.active:hover {
+  background: #c5221f;
+}
+
+#toggle-btn:disabled {
+  background: #9aa0a6;
+  cursor: not-allowed;
+}

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ca">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Change Background Color</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h2>Color de fons</h2>
+    <div id="color-grid">
+      <button
+        class="color-btn"
+        data-color="#FF6B6B"
+        style="background: #ff6b6b"
+      ></button>
+      <button
+        class="color-btn"
+        data-color="#4ECDC4"
+        style="background: #4ecdc4"
+      ></button>
+      <button
+        class="color-btn"
+        data-color="#45B7D1"
+        style="background: #45b7d1"
+      ></button>
+      <button
+        class="color-btn"
+        data-color="#96CEB4"
+        style="background: #96ceb4"
+      ></button>
+      <button
+        class="color-btn"
+        data-color="#FFEAA7"
+        style="background: #ffeaa7"
+      ></button>
+      <button
+        class="color-btn"
+        data-color="#DDA0DD"
+        style="background: #dda0dd"
+      ></button>
+      <button
+        class="color-btn"
+        data-color="#98D8C8"
+        style="background: #98d8c8"
+      ></button>
+      <button
+        class="color-btn"
+        data-color="#F7DC6F"
+        style="background: #f7dc6f"
+      ></button>
+      <button
+        class="color-btn"
+        data-color="#FFFFFF"
+        style="background: #ffffff; border: 1px solid #ccc"
+      ></button>
+    </div>
+    <div id="custom-row">
+      <input
+        type="color"
+        id="custom-color"
+        value="#ffffff"
+        title="Color personalitzat"
+      />
+      <button id="apply-custom">Aplicar color</button>
+    </div>
+    <button id="reset-btn">↩ Restablir original</button>
+    <script src="popup.js"></script>
+  </body>
+</html>

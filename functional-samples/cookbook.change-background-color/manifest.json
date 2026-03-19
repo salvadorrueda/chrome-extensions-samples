@@ -1,0 +1,20 @@
+{
+  "name": "Change Background Color",
+  "description": "Changes the background color of the current page.",
+  "version": "1.0",
+  "manifest_version": 3,
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "128": "icons/128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "128": "icons/128.png"
+  },
+  "permissions": ["activeTab", "scripting"]
+}

@@ -21,7 +21,10 @@ function getPriorityScore(element) {
     score += 25;
   }
 
-  if (element.domPath && /loginForm|pageBody|form-group/i.test(element.domPath)) {
+  if (
+    element.domPath &&
+    /loginForm|pageBody|form-group/i.test(element.domPath)
+  ) {
     score += 20;
   }
 
@@ -32,17 +35,316 @@ function getPriorityScore(element) {
   return score;
 }
 
+const INPUT_TYPE_KEYS = [
+  'text',
+  'number',
+  'textarea',
+  'select',
+  'contenteditable'
+];
+
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({
     active: true,
-    currentWindow: true,
+    currentWindow: true
   });
 
   if (!tab || !tab.id) {
-    throw new Error('No s\'ha pogut obtenir la pestanya activa.');
+    throw new Error("No s'ha pogut obtenir la pestanya activa.");
   }
 
   return tab;
+}
+
+async function queryInputAnalyzerState(tabId) {
+  const DATA_ATTR = 'data-input-analyzer-type';
+
+  const results = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    func: (attr) => {
+      function compactText(text) {
+        return (text || '').replace(/\s+/g, ' ').trim();
+      }
+
+      function getDomPath(element) {
+        const segments = [];
+        let current = element;
+
+        while (current && current.nodeType === Node.ELEMENT_NODE) {
+          const tagName = current.tagName.toLowerCase();
+          let segment = tagName;
+
+          if (current.id) {
+            segment += `#${current.id}`;
+            segments.unshift(segment);
+            break;
+          }
+
+          let index = 1;
+          let sibling = current.previousElementSibling;
+
+          while (sibling) {
+            if (sibling.tagName === current.tagName) {
+              index += 1;
+            }
+            sibling = sibling.previousElementSibling;
+          }
+
+          segment += `:nth-of-type(${index})`;
+          segments.unshift(segment);
+          current = current.parentElement;
+        }
+
+        return segments.join(' > ');
+      }
+
+      function describeInput(el, type) {
+        const labelEl = el.labels && el.labels.length > 0 ? el.labels[0] : null;
+        const labelText = labelEl
+          ? compactText(labelEl.innerText || labelEl.textContent)
+          : '';
+        const text = compactText(el.innerText || el.textContent || '');
+
+        return {
+          kind: type,
+          tag: el.tagName.toLowerCase(),
+          inputType: el.getAttribute('type') || '',
+          id: el.getAttribute('id') || '',
+          class: el.getAttribute('class') || '',
+          name: (el.getAttribute('name') || '').substring(0, 120),
+          ariaLabel: (el.getAttribute('aria-label') || '').substring(0, 120),
+          placeholder: (el.getAttribute('placeholder') || '').substring(0, 120),
+          value: compactText(
+            el.value || el.getAttribute('value') || ''
+          ).substring(0, 120),
+          label: labelText.substring(0, 120),
+          text: text.substring(0, 120),
+          domPath: getDomPath(el),
+          frameUrl: window.location.href
+        };
+      }
+
+      const highlighted = document.querySelectorAll(`[${attr}]`);
+      const counts = {
+        text: 0,
+        number: 0,
+        textarea: 0,
+        select: 0,
+        contenteditable: 0
+      };
+      const elements = [];
+
+      highlighted.forEach((el) => {
+        const type = el.getAttribute(attr);
+        if (type in counts) {
+          counts[type] += 1;
+          elements.push(describeInput(el, type));
+        }
+      });
+
+      return {
+        active: window.__inputAnalyzerActive || false,
+        count: highlighted.length,
+        counts,
+        elements
+      };
+    },
+    args: [DATA_ATTR]
+  });
+
+  return aggregateInputAnalyzerResults(results);
+}
+
+function aggregateInputAnalyzerResults(results) {
+  const totals = {
+    text: 0,
+    number: 0,
+    textarea: 0,
+    select: 0,
+    contenteditable: 0
+  };
+
+  let active = false;
+  let count = 0;
+  const aggregatedElements = [];
+  const seenKeys = new Set();
+
+  results.forEach((entry) => {
+    const result = entry?.result || entry;
+
+    if (!result) {
+      return;
+    }
+
+    const frameId = typeof entry?.frameId === 'number' ? entry.frameId : 0;
+    active = active || Boolean(result.active);
+    count += result.count || 0;
+
+    INPUT_TYPE_KEYS.forEach((key) => {
+      totals[key] += result.counts?.[key] || 0;
+    });
+
+    (result.elements || []).forEach((element) => {
+      const normalizedElement = {
+        ...element,
+        frameId
+      };
+      const uniqueKey = [
+        frameId,
+        normalizedElement.kind,
+        normalizedElement.tag,
+        normalizedElement.inputType,
+        normalizedElement.id,
+        normalizedElement.name,
+        normalizedElement.placeholder,
+        normalizedElement.ariaLabel,
+        normalizedElement.value,
+        normalizedElement.label,
+        normalizedElement.text,
+        normalizedElement.domPath,
+        normalizedElement.frameUrl
+      ].join('|');
+
+      if (!seenKeys.has(uniqueKey)) {
+        seenKeys.add(uniqueKey);
+        aggregatedElements.push(normalizedElement);
+      }
+    });
+  });
+
+  return { active, count, counts: totals, elements: aggregatedElements };
+}
+
+function renderInputElementsList(elements) {
+  const inputResultsEl = document.getElementById('input-results');
+  const inputCountEl = document.getElementById('input-element-count');
+  const inputListEl = document.getElementById('input-elements-list');
+
+  if (!elements || elements.length === 0) {
+    inputResultsEl.hidden = true;
+    inputListEl.innerHTML = '';
+    inputCountEl.textContent = '';
+    return;
+  }
+
+  inputResultsEl.hidden = false;
+  inputCountEl.textContent = `Total: ${elements.length} input field(s)`;
+  inputListEl.innerHTML = '';
+
+  elements.forEach((el) => {
+    const itemEl = document.createElement('div');
+    itemEl.className = 'element-item';
+
+    let content = `<span class="element-tag">&lt;${escapeHtml(el.tag)}&gt;</span>`;
+    content += `<span class="element-property"><span class="property-label">CATEGORY:</span> ${escapeHtml(el.kind || 'text')}</span>`;
+
+    if (el.inputType) {
+      content += `<span class="element-property"><span class="property-label">TYPE:</span> ${escapeHtml(el.inputType)}</span>`;
+    }
+
+    const mainText = el.label || el.placeholder || el.ariaLabel || el.text;
+    if (mainText) {
+      content += `<div class="element-text">${escapeHtml(mainText)}</div>`;
+    }
+
+    const properties = [];
+    if (el.id)
+      properties.push(
+        `<span class="element-property"><span class="property-label">ID:</span> ${escapeHtml(el.id)}</span>`
+      );
+    if (el.name)
+      properties.push(
+        `<span class="element-property"><span class="property-label">NAME:</span> ${escapeHtml(el.name)}</span>`
+      );
+    if (el.value)
+      properties.push(
+        `<span class="element-property"><span class="property-label">VALUE:</span> ${escapeHtml(el.value)}</span>`
+      );
+    if (el.domPath)
+      properties.push(
+        `<span class="element-property"><span class="property-label">PATH:</span> ${escapeHtml(el.domPath.substring(0, 60))}</span>`
+      );
+    if (el.frameUrl)
+      properties.push(
+        `<span class="element-property"><span class="property-label">FRAME:</span> ${escapeHtml(el.frameUrl.substring(0, 60))}</span>`
+      );
+
+    if (properties.length > 0) {
+      content += `<div class="element-properties">${properties.join('')}</div>`;
+    }
+
+    itemEl.innerHTML = content;
+    inputListEl.appendChild(itemEl);
+  });
+}
+
+function updateInputAnalyzerUi({ active, count, counts, elements }) {
+  const toggleBtn = document.getElementById('toggle-input-btn');
+  const statusEl = document.getElementById('input-status');
+  const countsEl = document.getElementById('input-counts');
+
+  if (active) {
+    toggleBtn.textContent = 'Remove Highlights';
+    toggleBtn.classList.add('active');
+
+    const plural = count === 1 ? '' : 's';
+    statusEl.textContent = `Found ${count} input field${plural}`;
+    countsEl.hidden = false;
+
+    INPUT_TYPE_KEYS.forEach((key) => {
+      const row = document.getElementById(`row-${key}`);
+      const num = document.getElementById(`cnt-${key}`);
+      const total = counts[key] || 0;
+
+      row.hidden = total === 0;
+      num.textContent = total;
+    });
+
+    renderInputElementsList(elements || []);
+
+    return;
+  }
+
+  toggleBtn.textContent = 'Highlight Input Fields';
+  toggleBtn.classList.remove('active');
+  statusEl.textContent = "Clica per ressaltar camps d'entrada";
+  countsEl.hidden = true;
+  renderInputElementsList([]);
+}
+
+async function initInputAnalyzer() {
+  const toggleBtn = document.getElementById('toggle-input-btn');
+  const tab = await getActiveTab();
+
+  let currentState = await queryInputAnalyzerState(tab.id);
+  updateInputAnalyzerUi(currentState);
+
+  toggleBtn.addEventListener('click', async () => {
+    toggleBtn.disabled = true;
+
+    try {
+      const mode = currentState.active ? 'remove' : 'add';
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: (inputMode) => {
+          window.__inputAnalyzerMode = inputMode;
+        },
+        args: [mode]
+      });
+
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        files: ['content.js']
+      });
+
+      currentState = aggregateInputAnalyzerResults(results);
+
+      updateInputAnalyzerUi(currentState);
+    } finally {
+      toggleBtn.disabled = false;
+    }
+  });
 }
 
 async function clickElementInPage(tabId, elementDescriptor) {
@@ -60,47 +362,63 @@ async function clickElementInPage(tabId, elementDescriptor) {
     }
 
     function findBestFallback(descriptorToFind) {
-      const candidates = Array.from(document.querySelectorAll('a, button, input, [role="button"], [role="link"], [onclick]'));
+      const candidates = Array.from(
+        document.querySelectorAll(
+          'a, button, input, [role="button"], [role="link"], [onclick]'
+        )
+      );
 
-      return candidates.find((candidate) => {
-        const candidateOnclick = candidate.getAttribute('onclick') || '';
-        const candidateId = candidate.getAttribute('id') || '';
-        const candidateClass = candidate.getAttribute('class') || '';
-        const candidateType = candidate.getAttribute('type') || '';
-        const candidateText = (candidate.innerText || candidate.textContent || '')
-          .replace(/\s+/g, ' ')
-          .trim();
+      return (
+        candidates.find((candidate) => {
+          const candidateOnclick = candidate.getAttribute('onclick') || '';
+          const candidateId = candidate.getAttribute('id') || '';
+          const candidateClass = candidate.getAttribute('class') || '';
+          const candidateType = candidate.getAttribute('type') || '';
+          const candidateText = (
+            candidate.innerText ||
+            candidate.textContent ||
+            ''
+          )
+            .replace(/\s+/g, ' ')
+            .trim();
 
-        return (
-          candidate.tagName.toLowerCase() === descriptorToFind.tag &&
-          candidateOnclick === (descriptorToFind.onclick || '') &&
-          candidateId === (descriptorToFind.id || '') &&
-          candidateClass === (descriptorToFind.class || '') &&
-          candidateType === (descriptorToFind.type || '') &&
-          candidateText.substring(0, 120) === (descriptorToFind.text || '')
-        );
-      }) || null;
+          return (
+            candidate.tagName.toLowerCase() === descriptorToFind.tag &&
+            candidateOnclick === (descriptorToFind.onclick || '') &&
+            candidateId === (descriptorToFind.id || '') &&
+            candidateClass === (descriptorToFind.class || '') &&
+            candidateType === (descriptorToFind.type || '') &&
+            candidateText.substring(0, 120) === (descriptorToFind.text || '')
+          );
+        }) || null
+      );
     }
 
     function fireClick(element) {
       element.scrollIntoView({ block: 'center', inline: 'center' });
       element.focus({ preventScroll: true });
 
-      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((eventName) => {
-        element.dispatchEvent(
-          new MouseEvent(eventName, {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-          })
-        );
-      });
+      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(
+        (eventName) => {
+          element.dispatchEvent(
+            new MouseEvent(eventName, {
+              bubbles: true,
+              cancelable: true,
+              view: window
+            })
+          );
+        }
+      );
     }
 
-    const target = getElementByDomPath(descriptor.domPath) || findBestFallback(descriptor);
+    const target =
+      getElementByDomPath(descriptor.domPath) || findBestFallback(descriptor);
 
     if (!target) {
-      return { success: false, message: 'No s\'ha pogut localitzar l\'element a la pàgina.' };
+      return {
+        success: false,
+        message: "No s'ha pogut localitzar l'element a la pàgina."
+      };
     }
 
     fireClick(target);
@@ -110,12 +428,12 @@ async function clickElementInPage(tabId, elementDescriptor) {
   const results = await chrome.scripting.executeScript({
     target: { tabId, frameIds: [elementDescriptor.frameId] },
     func: clickResolvedElement,
-    args: [elementDescriptor],
+    args: [elementDescriptor]
   });
 
   const result = results[0]?.result;
   if (!result?.success) {
-    throw new Error(result?.message || 'No s\'ha pogut fer click a l\'element.');
+    throw new Error(result?.message || "No s'ha pogut fer click a l'element.");
   }
 }
 
@@ -134,26 +452,36 @@ async function highlightElementInPage(tabId, elementDescriptor) {
     }
 
     function findBestFallback(descriptorToFind) {
-      const candidates = Array.from(document.querySelectorAll('a, button, input, [role="button"], [role="link"], [onclick]'));
+      const candidates = Array.from(
+        document.querySelectorAll(
+          'a, button, input, [role="button"], [role="link"], [onclick]'
+        )
+      );
 
-      return candidates.find((candidate) => {
-        const candidateOnclick = candidate.getAttribute('onclick') || '';
-        const candidateId = candidate.getAttribute('id') || '';
-        const candidateClass = candidate.getAttribute('class') || '';
-        const candidateType = candidate.getAttribute('type') || '';
-        const candidateText = (candidate.innerText || candidate.textContent || '')
-          .replace(/\s+/g, ' ')
-          .trim();
+      return (
+        candidates.find((candidate) => {
+          const candidateOnclick = candidate.getAttribute('onclick') || '';
+          const candidateId = candidate.getAttribute('id') || '';
+          const candidateClass = candidate.getAttribute('class') || '';
+          const candidateType = candidate.getAttribute('type') || '';
+          const candidateText = (
+            candidate.innerText ||
+            candidate.textContent ||
+            ''
+          )
+            .replace(/\s+/g, ' ')
+            .trim();
 
-        return (
-          candidate.tagName.toLowerCase() === descriptorToFind.tag &&
-          candidateOnclick === (descriptorToFind.onclick || '') &&
-          candidateId === (descriptorToFind.id || '') &&
-          candidateClass === (descriptorToFind.class || '') &&
-          candidateType === (descriptorToFind.type || '') &&
-          candidateText.substring(0, 120) === (descriptorToFind.text || '')
-        );
-      }) || null;
+          return (
+            candidate.tagName.toLowerCase() === descriptorToFind.tag &&
+            candidateOnclick === (descriptorToFind.onclick || '') &&
+            candidateId === (descriptorToFind.id || '') &&
+            candidateClass === (descriptorToFind.class || '') &&
+            candidateType === (descriptorToFind.type || '') &&
+            candidateText.substring(0, 120) === (descriptorToFind.text || '')
+          );
+        }) || null
+      );
     }
 
     function ensureHighlightStyle() {
@@ -174,10 +502,11 @@ async function highlightElementInPage(tabId, elementDescriptor) {
       document.head.appendChild(style);
     }
 
-    const target = getElementByDomPath(descriptor.domPath) || findBestFallback(descriptor);
+    const target =
+      getElementByDomPath(descriptor.domPath) || findBestFallback(descriptor);
 
     if (!target) {
-      return { success: false, message: 'No s\'ha pogut ressaltar l\'element.' };
+      return { success: false, message: "No s'ha pogut ressaltar l'element." };
     }
 
     ensureHighlightStyle();
@@ -186,7 +515,9 @@ async function highlightElementInPage(tabId, elementDescriptor) {
       window.__clickableAnalyzerLastHighlight &&
       window.__clickableAnalyzerLastHighlight.isConnected
     ) {
-      window.__clickableAnalyzerLastHighlight.classList.remove('__clickable-analyzer-highlight');
+      window.__clickableAnalyzerLastHighlight.classList.remove(
+        '__clickable-analyzer-highlight'
+      );
     }
 
     target.classList.add('__clickable-analyzer-highlight');
@@ -205,12 +536,12 @@ async function highlightElementInPage(tabId, elementDescriptor) {
   const results = await chrome.scripting.executeScript({
     target: { tabId, frameIds: [elementDescriptor.frameId] },
     func: highlightResolvedElement,
-    args: [elementDescriptor],
+    args: [elementDescriptor]
   });
 
   const result = results[0]?.result;
   if (!result?.success) {
-    throw new Error(result?.message || 'No s\'ha pogut ressaltar l\'element.');
+    throw new Error(result?.message || "No s'ha pogut ressaltar l'element.");
   }
 }
 
@@ -236,7 +567,9 @@ function getClickableElements() {
     }
 
     const rect = element.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0 && element.getClientRects().length > 0;
+    return (
+      rect.width > 0 && rect.height > 0 && element.getClientRects().length > 0
+    );
   }
 
   function isProbablyClickable(element, style) {
@@ -264,7 +597,16 @@ function getClickableElements() {
     }
 
     if (
-      ['button', 'link', 'menuitem', 'option', 'tab', 'checkbox', 'radio', 'switch'].includes(role)
+      [
+        'button',
+        'link',
+        'menuitem',
+        'option',
+        'tab',
+        'checkbox',
+        'radio',
+        'switch'
+      ].includes(role)
     ) {
       return true;
     }
@@ -309,7 +651,10 @@ function getClickableElements() {
       return 'onclick';
     }
 
-    if (element.hasAttribute('ng-click') || element.hasAttribute('data-ng-click')) {
+    if (
+      element.hasAttribute('ng-click') ||
+      element.hasAttribute('data-ng-click')
+    ) {
       return 'angular-click';
     }
 
@@ -332,7 +677,7 @@ function getClickableElements() {
     const candidates = [
       element.previousElementSibling,
       element.nextElementSibling,
-      element.parentElement,
+      element.parentElement
     ];
 
     for (const candidate of candidates) {
@@ -345,7 +690,9 @@ function getClickableElements() {
         node.remove();
       });
 
-      const text = compactText(clonedCandidate.innerText || clonedCandidate.textContent);
+      const text = compactText(
+        clonedCandidate.innerText || clonedCandidate.textContent
+      );
       if (!text) {
         continue;
       }
@@ -434,9 +781,9 @@ function getClickableElements() {
         x: Math.round(rect.x),
         y: Math.round(rect.y),
         width: Math.round(rect.width),
-        height: Math.round(rect.height),
+        height: Math.round(rect.height)
       },
-      frameUrl: window.location.href,
+      frameUrl: window.location.href
     };
   }
 
@@ -458,7 +805,7 @@ function getClickableElements() {
     '[style*="cursor: pointer"]',
     '[class*="btn"]',
     '[class*="button"]',
-    '[class*="link"]',
+    '[class*="link"]'
   ];
 
   const clickableElements = [];
@@ -528,7 +875,7 @@ document.getElementById('analyze-btn').addEventListener('click', async () => {
     // Executar l'anàlisi a la pàgina principal i a tots els iframes accessibles
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
-      func: getClickableElements,
+      func: getClickableElements
     });
 
     const uniqueElements = new Map();
@@ -551,7 +898,9 @@ document.getElementById('analyze-btn').addEventListener('click', async () => {
           element.onclick,
           element.contextText,
           element.domPath,
-          element.rect ? `${element.rect.x},${element.rect.y},${element.rect.width},${element.rect.height}` : '',
+          element.rect
+            ? `${element.rect.x},${element.rect.y},${element.rect.width},${element.rect.height}`
+            : ''
         ].join('|');
 
         if (!uniqueElements.has(key)) {
@@ -565,7 +914,7 @@ document.getElementById('analyze-btn').addEventListener('click', async () => {
     });
 
     if (elements.length === 0) {
-      throw new Error('No s\'han trobat elements clicables.');
+      throw new Error("No s'han trobat elements clicables.");
     }
 
     // Mostrar resultats
@@ -585,22 +934,70 @@ document.getElementById('analyze-btn').addEventListener('click', async () => {
       }
 
       const properties = [];
-      if (el.id) properties.push(`<span class="element-property"><span class="property-label">ID:</span> ${escapeHtml(el.id)}</span>`);
-      if (el.class) properties.push(`<span class="element-property"><span class="property-label">CLASS:</span> ${escapeHtml(el.class.substring(0, 50))}</span>`);
-      if (el.href) properties.push(`<span class="element-property"><span class="property-label">HREF:</span> ${escapeHtml(el.href.substring(0, 40))}</span>`);
-      if (el.type) properties.push(`<span class="element-property"><span class="property-label">TYPE:</span> ${el.type}</span>`);
-      if (el.role) properties.push(`<span class="element-property"><span class="property-label">ROLE:</span> ${el.role}</span>`);
-      if (el.title) properties.push(`<span class="element-property"><span class="property-label">TITLE:</span> ${escapeHtml(el.title.substring(0, 40))}</span>`);
-      if (el.ariaLabel) properties.push(`<span class="element-property"><span class="property-label">ARIA:</span> ${escapeHtml(el.ariaLabel.substring(0, 40))}</span>`);
-      if (el.value) properties.push(`<span class="element-property"><span class="property-label">VALUE:</span> ${escapeHtml(el.value.substring(0, 40))}</span>`);
-      if (el.alt) properties.push(`<span class="element-property"><span class="property-label">ALT:</span> ${escapeHtml(el.alt.substring(0, 40))}</span>`);
-      if (el.placeholder) properties.push(`<span class="element-property"><span class="property-label">PLACEHOLDER:</span> ${escapeHtml(el.placeholder.substring(0, 40))}</span>`);
-      if (el.name) properties.push(`<span class="element-property"><span class="property-label">NAME:</span> ${escapeHtml(el.name.substring(0, 40))}</span>`);
-      if (el.onclick) properties.push(`<span class="element-property"><span class="property-label">ONCLICK:</span> ${escapeHtml(el.onclick.substring(0, 40))}</span>`);
-      if (el.iconClass) properties.push(`<span class="element-property"><span class="property-label">ICONA:</span> ${escapeHtml(el.iconClass.substring(0, 40))}</span>`);
-      if (el.reason) properties.push(`<span class="element-property"><span class="property-label">DETECTAT PER:</span> ${escapeHtml(el.reason)}</span>`);
-      if (el.domPath) properties.push(`<span class="element-property"><span class="property-label">PATH:</span> ${escapeHtml(el.domPath.substring(0, 60))}</span>`);
-      if (el.frameUrl) properties.push(`<span class="element-property"><span class="property-label">FRAME:</span> ${escapeHtml(el.frameUrl.substring(0, 60))}</span>`);
+      if (el.id)
+        properties.push(
+          `<span class="element-property"><span class="property-label">ID:</span> ${escapeHtml(el.id)}</span>`
+        );
+      if (el.class)
+        properties.push(
+          `<span class="element-property"><span class="property-label">CLASS:</span> ${escapeHtml(el.class.substring(0, 50))}</span>`
+        );
+      if (el.href)
+        properties.push(
+          `<span class="element-property"><span class="property-label">HREF:</span> ${escapeHtml(el.href.substring(0, 40))}</span>`
+        );
+      if (el.type)
+        properties.push(
+          `<span class="element-property"><span class="property-label">TYPE:</span> ${el.type}</span>`
+        );
+      if (el.role)
+        properties.push(
+          `<span class="element-property"><span class="property-label">ROLE:</span> ${el.role}</span>`
+        );
+      if (el.title)
+        properties.push(
+          `<span class="element-property"><span class="property-label">TITLE:</span> ${escapeHtml(el.title.substring(0, 40))}</span>`
+        );
+      if (el.ariaLabel)
+        properties.push(
+          `<span class="element-property"><span class="property-label">ARIA:</span> ${escapeHtml(el.ariaLabel.substring(0, 40))}</span>`
+        );
+      if (el.value)
+        properties.push(
+          `<span class="element-property"><span class="property-label">VALUE:</span> ${escapeHtml(el.value.substring(0, 40))}</span>`
+        );
+      if (el.alt)
+        properties.push(
+          `<span class="element-property"><span class="property-label">ALT:</span> ${escapeHtml(el.alt.substring(0, 40))}</span>`
+        );
+      if (el.placeholder)
+        properties.push(
+          `<span class="element-property"><span class="property-label">PLACEHOLDER:</span> ${escapeHtml(el.placeholder.substring(0, 40))}</span>`
+        );
+      if (el.name)
+        properties.push(
+          `<span class="element-property"><span class="property-label">NAME:</span> ${escapeHtml(el.name.substring(0, 40))}</span>`
+        );
+      if (el.onclick)
+        properties.push(
+          `<span class="element-property"><span class="property-label">ONCLICK:</span> ${escapeHtml(el.onclick.substring(0, 40))}</span>`
+        );
+      if (el.iconClass)
+        properties.push(
+          `<span class="element-property"><span class="property-label">ICONA:</span> ${escapeHtml(el.iconClass.substring(0, 40))}</span>`
+        );
+      if (el.reason)
+        properties.push(
+          `<span class="element-property"><span class="property-label">DETECTAT PER:</span> ${escapeHtml(el.reason)}</span>`
+        );
+      if (el.domPath)
+        properties.push(
+          `<span class="element-property"><span class="property-label">PATH:</span> ${escapeHtml(el.domPath.substring(0, 60))}</span>`
+        );
+      if (el.frameUrl)
+        properties.push(
+          `<span class="element-property"><span class="property-label">FRAME:</span> ${escapeHtml(el.frameUrl.substring(0, 60))}</span>`
+        );
 
       if (properties.length > 0) {
         content += `<div class="element-properties">${properties.join('')}</div>`;
@@ -667,3 +1064,10 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  initInputAnalyzer().catch((error) => {
+    const statusEl = document.getElementById('input-status');
+    statusEl.textContent = `Error: ${error.message}`;
+  });
+});

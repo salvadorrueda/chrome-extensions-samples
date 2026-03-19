@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Input Fields Analyzer</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Input Fields Analyzer</h1>
+    </header>
+
+    <main>
+      <p id="status">Loading…</p>
+
+      <div id="counts" hidden>
+        <div class="count-row" id="row-text" hidden>
+          <span class="dot" style="background: #4285f4"></span>
+          <span class="label">Text / Email / Password</span>
+          <span class="num" id="cnt-text">0</span>
+        </div>
+        <div class="count-row" id="row-number" hidden>
+          <span class="dot" style="background: #34a853"></span>
+          <span class="label">Number / Date / Range</span>
+          <span class="num" id="cnt-number">0</span>
+        </div>
+        <div class="count-row" id="row-textarea" hidden>
+          <span class="dot" style="background: #9c27b0"></span>
+          <span class="label">Textarea</span>
+          <span class="num" id="cnt-textarea">0</span>
+        </div>
+        <div class="count-row" id="row-select" hidden>
+          <span class="dot" style="background: #ff9800"></span>
+          <span class="label">Select</span>
+          <span class="num" id="cnt-select">0</span>
+        </div>
+        <div class="count-row" id="row-contenteditable" hidden>
+          <span class="dot" style="background: #ea4335"></span>
+          <span class="label">Contenteditable</span>
+          <span class="num" id="cnt-contenteditable">0</span>
+        </div>
+      </div>
+
+      <button id="toggle-btn">Highlight Input Fields</button>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

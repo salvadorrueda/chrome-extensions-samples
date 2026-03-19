@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ca">
   <head>
     <meta charset="UTF-8" />
@@ -10,14 +10,62 @@
     <div class="container">
       <h1>Elements Clicables</h1>
       <button id="analyze-btn" class="btn btn-primary">Analitzar</button>
-      <div id="loading" class="loading" style="display: none;">
+
+      <section class="input-analyzer-section">
+        <h2>Input Fields Analyzer</h2>
+        <p id="input-status" class="input-status">
+          Clica per ressaltar camps d'entrada
+        </p>
+
+        <div id="input-counts" class="input-counts" hidden>
+          <div class="input-count-row" id="row-text" hidden>
+            <span class="dot" style="background: #4285f4"></span>
+            <span class="label">Text / Email / Password</span>
+            <span class="num" id="cnt-text">0</span>
+          </div>
+          <div class="input-count-row" id="row-number" hidden>
+            <span class="dot" style="background: #34a853"></span>
+            <span class="label">Number / Date / Range</span>
+            <span class="num" id="cnt-number">0</span>
+          </div>
+          <div class="input-count-row" id="row-textarea" hidden>
+            <span class="dot" style="background: #9c27b0"></span>
+            <span class="label">Textarea</span>
+            <span class="num" id="cnt-textarea">0</span>
+          </div>
+          <div class="input-count-row" id="row-select" hidden>
+            <span class="dot" style="background: #ff9800"></span>
+            <span class="label">Select</span>
+            <span class="num" id="cnt-select">0</span>
+          </div>
+          <div class="input-count-row" id="row-contenteditable" hidden>
+            <span class="dot" style="background: #ea4335"></span>
+            <span class="label">Contenteditable</span>
+            <span class="num" id="cnt-contenteditable">0</span>
+          </div>
+        </div>
+
+        <div id="input-results" class="input-results" hidden>
+          <p class="count" id="input-element-count"></p>
+          <div
+            id="input-elements-list"
+            class="elements-list input-elements-list"
+          ></div>
+        </div>
+
+        <button id="toggle-input-btn" class="btn btn-secondary">
+          Highlight Input Fields
+        </button>
+      </section>
+
+      <div id="loading" class="loading" style="display: none">
         <p>Analitzant...</p>
       </div>
-      <div id="results" class="results" style="display: none;">
+      <div id="results" class="results" style="display: none">
         <p class="count" id="element-count"></p>
         <div id="elements-list" class="elements-list"></div>
       </div>
-      <div id="error" class="error" style="display: none;"></div>
+      <div id="error" class="error" style="display: none"></div>
     </div>
     <script src="popup.js"></script>
   </body>
