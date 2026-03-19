@@ -100,6 +100,34 @@ h2 {
   max-height: 220px;
 }
 
+.input-values-label {
+  display: block;
+  margin: 10px 0 6px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.input-values-textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #111827;
+  background: #f8fafc;
+  box-sizing: border-box;
+}
+
+#apply-input-values-btn {
+  margin-top: 8px;
+  width: 100%;
+}
+
 .input-count-row {
   display: flex;
   align-items: center;

@@ -219,17 +219,40 @@ function renderInputElementsList(elements) {
   const inputResultsEl = document.getElementById('input-results');
   const inputCountEl = document.getElementById('input-element-count');
   const inputListEl = document.getElementById('input-elements-list');
+  const inputValuesTextarea = document.getElementById('input-values-textarea');
+
+  function getInputIdentifier(element) {
+    if (element.id) {
+      return `#${element.id}`;
+    }
+
+    if (element.name) {
+      return `[name="${element.name}"]`;
+    }
+
+    if (element.domPath) {
+      return element.domPath;
+    }
+
+    return element.tag || 'input';
+  }
+
+  function getInputLineValue(element) {
+    return `${getInputIdentifier(element)}: ${element.value || element.text || ''}`;
+  }
 
   if (!elements || elements.length === 0) {
     inputResultsEl.hidden = true;
     inputListEl.innerHTML = '';
     inputCountEl.textContent = '';
+    inputValuesTextarea.value = '';
     return;
   }
 
   inputResultsEl.hidden = false;
   inputCountEl.textContent = `Total: ${elements.length} input field(s)`;
   inputListEl.innerHTML = '';
+  inputValuesTextarea.value = elements.map(getInputLineValue).join('\n');
 
   elements.forEach((el) => {
     const itemEl = document.createElement('div');
@@ -282,6 +305,7 @@ function updateInputAnalyzerUi({ active, count, counts, elements }) {
   const toggleBtn = document.getElementById('toggle-input-btn');
   const statusEl = document.getElementById('input-status');
   const countsEl = document.getElementById('input-counts');
+  const applyBtn = document.getElementById('apply-input-values-btn');
 
   if (active) {
     toggleBtn.textContent = 'Remove Highlights';
@@ -301,6 +325,7 @@ function updateInputAnalyzerUi({ active, count, counts, elements }) {
     });
 
     renderInputElementsList(elements || []);
+    applyBtn.hidden = false;
 
     return;
   }
@@ -309,11 +334,138 @@ function updateInputAnalyzerUi({ active, count, counts, elements }) {
   toggleBtn.classList.remove('active');
   statusEl.textContent = "Clica per ressaltar camps d'entrada";
   countsEl.hidden = true;
+  applyBtn.hidden = true;
   renderInputElementsList([]);
+}
+
+function parseTextareaInputValues(textareaValue, elements) {
+  const lines = textareaValue.split('\n');
+
+  return elements.map((element, index) => {
+    const rawLine = lines[index] || '';
+    const separatorIndex = rawLine.indexOf(': ');
+    const newValue =
+      separatorIndex >= 0 ? rawLine.slice(separatorIndex + 2) : rawLine;
+
+    return {
+      ...element,
+      value: newValue,
+      text: newValue
+    };
+  });
+}
+
+async function applyInputValuesToPage(tabId, elements) {
+  const elementsByFrame = new Map();
+
+  elements.forEach((element) => {
+    if (!elementsByFrame.has(element.frameId)) {
+      elementsByFrame.set(element.frameId, []);
+    }
+
+    elementsByFrame.get(element.frameId).push(element);
+  });
+
+  await Promise.all(
+    Array.from(elementsByFrame.entries()).map(([frameId, frameElements]) => {
+      return chrome.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        func: (descriptors) => {
+          function getElementByDomPath(path) {
+            if (!path) {
+              return null;
+            }
+
+            try {
+              return document.querySelector(path);
+            } catch (_error) {
+              return null;
+            }
+          }
+
+          function findMatchingInput(descriptor) {
+            const candidates = Array.from(
+              document.querySelectorAll(
+                'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
+              )
+            );
+
+            return (
+              getElementByDomPath(descriptor.domPath) ||
+              candidates.find((candidate) => {
+                return (
+                  candidate.tagName.toLowerCase() === descriptor.tag &&
+                  (candidate.getAttribute('id') || '') ===
+                    (descriptor.id || '') &&
+                  (candidate.getAttribute('name') || '') ===
+                    (descriptor.name || '') &&
+                  (candidate.getAttribute('type') || '') ===
+                    (descriptor.inputType || '')
+                );
+              }) ||
+              null
+            );
+          }
+
+          function updateElementValue(element, value) {
+            if (
+              element.isContentEditable &&
+              element.tagName !== 'INPUT' &&
+              element.tagName !== 'TEXTAREA' &&
+              element.tagName !== 'SELECT'
+            ) {
+              element.textContent = value;
+            } else if (element.tagName === 'SELECT') {
+              const option = Array.from(element.options).find((item) => {
+                return item.value === value || item.text === value;
+              });
+
+              if (option) {
+                element.value = option.value;
+              } else {
+                element.value = value;
+              }
+            } else {
+              element.value = value;
+            }
+
+            element.dispatchEvent(
+              new Event('input', { bubbles: true, cancelable: true })
+            );
+            element.dispatchEvent(
+              new Event('change', { bubbles: true, cancelable: true })
+            );
+          }
+
+          return descriptors.map((descriptor) => {
+            const target = findMatchingInput(descriptor);
+
+            if (!target) {
+              return {
+                success: false,
+                identifier:
+                  descriptor.id ||
+                  descriptor.name ||
+                  descriptor.domPath ||
+                  descriptor.tag
+              };
+            }
+
+            updateElementValue(target, descriptor.value || '');
+            return { success: true };
+          });
+        },
+        args: [frameElements]
+      });
+    })
+  );
 }
 
 async function initInputAnalyzer() {
   const toggleBtn = document.getElementById('toggle-input-btn');
+  const applyBtn = document.getElementById('apply-input-values-btn');
+  const inputValuesTextarea = document.getElementById('input-values-textarea');
+  const statusEl = document.getElementById('input-status');
   const tab = await getActiveTab();
 
   let currentState = await queryInputAnalyzerState(tab.id);
@@ -343,6 +495,31 @@ async function initInputAnalyzer() {
       updateInputAnalyzerUi(currentState);
     } finally {
       toggleBtn.disabled = false;
+    }
+  });
+
+  applyBtn.addEventListener('click', async () => {
+    if (!currentState.active || !currentState.elements?.length) {
+      return;
+    }
+
+    applyBtn.disabled = true;
+
+    try {
+      const updatedElements = parseTextareaInputValues(
+        inputValuesTextarea.value,
+        currentState.elements
+      );
+
+      await applyInputValuesToPage(tab.id, updatedElements);
+      currentState = {
+        ...currentState,
+        elements: updatedElements
+      };
+      statusEl.textContent = `Actualitzats ${updatedElements.length} input field(s)`;
+      renderInputElementsList(updatedElements);
+    } finally {
+      applyBtn.disabled = false;
     }
   });
 }
