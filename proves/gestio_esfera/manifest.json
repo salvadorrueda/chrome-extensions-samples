@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Gestió Esfera",
+  "version": "1.0",
+  "description": "Analitza una web i fa un llistat de tots els elements on es pot fer clic",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Gestió Esfera"
+  }
+}
