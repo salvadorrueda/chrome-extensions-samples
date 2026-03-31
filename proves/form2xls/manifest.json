@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Form2XLS",
+  "version": "1.0",
+  "description": "Exporta i importa els camps d'un formulari web com a full de càlcul CSV",
+  "permissions": ["activeTab", "scripting", "downloads"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Form2XLS"
+  }
+}
