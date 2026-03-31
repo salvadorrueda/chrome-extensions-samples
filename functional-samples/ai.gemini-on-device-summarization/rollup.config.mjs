@@ -7,7 +7,7 @@ export default [
     input: 'sidepanel/index.js',
     output: {
       dir: 'dist/sidepanel',
-      format: 'iife',
+      format: 'iife'
     },
     plugins: [
       commonjs(),
@@ -28,9 +28,6 @@ export default [
       dir: 'dist/scripts',
       format: 'es'
     },
-    plugins: [
-      commonjs(),
-      nodeResolve(),
-    ]
+    plugins: [commonjs(), nodeResolve()]
   }
 ];

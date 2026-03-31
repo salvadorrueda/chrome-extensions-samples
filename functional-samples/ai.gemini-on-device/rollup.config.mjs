@@ -7,7 +7,7 @@ export default [
     input: 'sidepanel/index.js',
     output: {
       dir: 'dist/sidepanel',
-      format: 'iife',
+      format: 'iife'
     },
     plugins: [
       nodeResolve({

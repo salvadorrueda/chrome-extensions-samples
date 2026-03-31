@@ -7,7 +7,7 @@ export default [
     input: 'background.js',
     output: {
       dir: 'dist',
-      format: 'iife',
+      format: 'iife'
     },
     plugins: [
       nodeResolve({

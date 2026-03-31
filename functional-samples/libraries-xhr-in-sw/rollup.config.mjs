@@ -5,10 +5,7 @@ export default {
   input: 'background.js',
   output: {
     inlineDynamicImports: true,
-    file: 'dist/background.js',
+    file: 'dist/background.js'
   },
-  plugins: [
-    commonjs(),
-    nodeResolve(),
-  ]
+  plugins: [commonjs(), nodeResolve()]
 };
