@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Form2Text",
+  "version": "1.0",
+  "description": "Visualitza i edita els camps d'un formulari web en format text pla",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Form2Text"
+  }
+}

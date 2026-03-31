@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ca">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Form2Text</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Form2Text</h1>
+        <span id="status" class="status">Escanejant...</span>
+      </div>
+
+      <textarea
+        id="form-textarea"
+        class="form-textarea"
+        placeholder="Els camps del formulari apareixeran aquí..."
+        spellcheck="false"
+      ></textarea>
+
+      <div id="line-count" class="line-count" hidden></div>
+
+      <div class="actions">
+        <button id="refresh-btn" class="btn btn-secondary">Actualitzar</button>
+        <button id="apply-btn" class="btn btn-primary" disabled>
+          Aplicar valors
+        </button>
+      </div>
+
+      <div id="error" class="error" hidden></div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
